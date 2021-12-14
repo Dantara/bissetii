@@ -1,37 +1,22 @@
 package bissetii
 
-import java.util.UUID
 import io.circe.Json
 import cats.effect.IO
 import cats.effect.IO._
 import cats.effect.kernel.Ref
 import cats.effect.kernel.Deferred
+import cats.effect.std.Semaphore
+import org.http4s._
+import java.util.UUID
 
-case class Job[Req](id: UUID, req: Req)
+case class Job[Req](id: UUID, req: Req, callbackUri: Uri)
 
-case class JobPool(pool: Ref[IO, Map[UUID, Deferred[IO, Json]]]) {
+case class JobResponse(id: UUID, body: Json)
+
+case class JobPool(pool: Ref[IO, Map[UUID, Deferred[IO, Json]]], sem: Semaphore[IO]) {
   def push(id: UUID, resp: Json): IO[Unit] = {
-    def updatePool(poolMap: Map[UUID, Deferred[IO, Json]]): IO[Map[UUID, Deferred[IO, Json]]] = {
-      poolMap.get(id) match {
-        case None => for {
-          d <- Deferred[IO, Json]
-          _ <- d.complete(resp)
-        } yield poolMap + (id -> d)
-        case Some(d) => for {
-          _ <- d.complete(resp)
-        } yield poolMap
-      }
-    }
-    // FIXME: Need to add synchronisation
-    for {
-      poolM <- pool.get
-      updated <- updatePool(poolM)
-      _ <- pool.set(updated)
-    } yield ()
-  }
-
-  def pull(id: UUID): IO[Json] = {
-    def updatePool(poolMap: Map[UUID, Deferred[IO, Json]]): IO[(Map[UUID, Deferred[IO, Json]], Deferred[IO, Json])] = {
+    def updatePool(poolMap: Map[UUID, Deferred[IO, Json]]):
+        IO[(Map[UUID, Deferred[IO, Json]], Deferred[IO, Json])] = {
       poolMap.get(id) match {
         case None => for {
           d <- Deferred[IO, Json]
@@ -39,16 +24,40 @@ case class JobPool(pool: Ref[IO, Map[UUID, Deferred[IO, Json]]]) {
         case Some(d) => pure((poolMap, d))
       }
     }
-    // FIXME: Need to add synchronisation
     for {
+      _ <- sem.acquire
       poolM <- pool.get
-      poolP <- updatePool(poolM)
-      res <- poolP._2.get
+      updatedP <- updatePool(poolM)
+      _ <- pool.set(updatedP._1)
+      _ <- sem.release
+      _ <- updatedP._2.complete(resp)
+    } yield ()
+  }
+
+  def pull(id: UUID): IO[Json] = {
+    def updatePool(poolMap: Map[UUID, Deferred[IO, Json]]):
+        IO[(Map[UUID, Deferred[IO, Json]], Deferred[IO, Json])] = {
+      poolMap.get(id) match {
+        case None => for {
+          d <- Deferred[IO, Json]
+        } yield (poolMap - id, d)
+        case Some(d) => pure((poolMap, d))
+      }
+    }
+    for {
+      _ <- sem.acquire
+      poolM <- pool.get
+      updatedP <- updatePool(poolM)
+      _ <- pool.set(updatedP._1)
+      _ <- sem.release
+      res <- updatedP._2.get
     } yield res
   }
 }
 
 object JobPool {
-  def initJobPool: IO[JobPool] = Ref.of(Map.empty[UUID, Deferred[IO, Json]])
-    .flatMap((r) => pure(JobPool(r)))
+  def initJobPool: IO[JobPool] = for {
+    ref <- Ref.of(Map.empty[UUID, Deferred[IO, Json]])
+    sem <- Semaphore.in(1)
+  } yield JobPool(ref, sem)
 }
