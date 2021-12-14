@@ -13,7 +13,7 @@ val http4sVersion = "0.23.7"
 libraryDependencies ++= Seq(
   "org.atnos" %% "eff" % "5.22.0",
   "org.atnos" %% "eff-cats-effect" % "5.17.0",
-  "org.typelevel" %% "cats-core" % "2.3.0",
+  "org.typelevel" %% "cats-effect" % "2.5.3",
   "io.circe" %% "circe-core" % circeVersion,
   "io.circe" %% "circe-generic" % circeVersion,
   "io.circe" %% "circe-parser" % circeVersion,
