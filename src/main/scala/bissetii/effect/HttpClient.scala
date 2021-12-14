@@ -1,14 +1,15 @@
 package bissetii.effect
 
 import org.atnos.eff._
+import org.http4s.Uri
 
-sealed trait HttpClient[+A]
+sealed trait HttpClient[Req, Resp]
 
-case class HttpSend[T](path: String, value: T) extends HttpClient[Unit]
+case class HttpSend[Req, Resp](path: Uri, value: Req) extends HttpClient[Req, Resp]
 
 object HttpClient {
-  type _httpClient[R] = HttpClient |= R
+  type _httpClient[Req, R] = HttpClient[Req, *] |= R
 
-  def send[T, R :_httpClient](path: String, value: T): Eff[R, Unit] =
-    Eff.send[HttpClient, R, Unit](HttpSend(path, value))
+  def send[Req, Resp, R :_httpClient[Req, *]](path: Uri, value: Req): Eff[R, Resp] =
+    Eff.send[HttpClient[Req, *], R, Resp](HttpSend(path, value))
 }

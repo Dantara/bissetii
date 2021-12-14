@@ -2,17 +2,17 @@ package bissetii.effect
 
 import org.atnos.eff._
 
-sealed trait Queue[+A]
+sealed trait Queue[V, +A]
 
-case class Push[T](value: T) extends Queue[Unit]
-case class Pull[T]() extends Queue[Option[T]]
+case class Push[V](key: String, value: V) extends Queue[V, Unit]
+case class Pull[V]() extends Queue[V, Option[V]]
 
 object Queue {
-  type _queue[R] = Queue |= R
+  type _queue[V, R] = Queue[V, *] |= R
 
-  def push[T, R :_queue](value: T): Eff[R, Unit] =
-    Eff.send[Queue, R, Unit](Push(value))
+  def push[V, R :_queue[V, *]](key: String, value: V): Eff[R, Unit] =
+    Eff.send[Queue[V, *], R, Unit](Push(key, value))
 
-  def pull[T, R :_queue]: Eff[R, Option[T]] =
-    Eff.send[Queue, R, Option[T]](Pull())
+  def pull[V, R :_queue[V, *]](): Eff[R, Option[V]] =
+    Eff.send[Queue[V, *], R, Option[V]](Pull())
 }
